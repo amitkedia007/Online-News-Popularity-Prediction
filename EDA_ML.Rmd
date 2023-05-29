@@ -1,0 +1,894 @@
+---
+title: "CS5811_Coursework"
+author: "2267302"
+date: "2023-04-04"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+```{r}
+# note: Uncomment the pacakages that are not installed in your system.
+
+#install.packages("validate")
+#install.packages("ggplot2")
+#install.packages("tidyverse")
+#install.packages("devtools")
+#install.packages("ggfortify")
+#install.packages("reshape")
+#install.packages("reshape2")
+#install.packages("corrplot")
+#install.packages(factoextra)
+#install.packages("e1071")
+#install.packages("fastcluster")
+#install.packages("glmnet")
+#install.packages("randomForest")
+
+library(randomForest)
+library(validate)
+library(tidyverse)
+library("tidyr")
+library("dplyr")
+library(ggplot2)
+library(Hmisc)
+library(ggfortify)
+library(reshape2)
+library(corrplot)
+library(factoextra)
+library(fastcluster)
+library(e1071)
+library(caret)
+library(glmnet)
+library(rpart)
+library(Metrics)
+```
+
+```{r}
+getOption("max.print")
+options(max.print = 10000)
+```
+
+# EDA and Summary of Results
+
+```{r}
+#Read cleaned Online News Popularity data from the CSV file
+  
+newsfame <- read.csv("Online_news_popularity_final_cleaned.csv")
+```
+
+```{r}
+# Exploration of dataset
+
+head(newsfame)
+```
+
+## Checking Variables of the Data Set
+
+```{r}
+# Show all the variables of the dataset
+
+names(newsfame)
+```
+
+```{r}
+# Check Statistical Summary of the dataset
+
+summary(newsfame)
+```
+
+```{r}
+# Check the overall structure of the dataset
+
+str(newsfame)
+```
+
+```{r}
+# Check for Categorical variables:
+
+table(newsfame$data_channel_is_lifestyle)
+table(newsfame$data_channel_is_bus)
+table(newsfame$data_channel_is_entertainment)
+table(newsfame$data_channel_is_socmed)
+table(newsfame$data_channel_is_tech)
+table(newsfame$data_channel_is_world)
+table(newsfame$weekday_is_monday)
+table(newsfame$weekday_is_tuesday)
+table(newsfame$weekday_is_wednesday)
+table(newsfame$weekday_is_thursday)
+table(newsfame$weekday_is_friday)
+table(newsfame$weekday_is_saturday)
+table(newsfame$weekday_is_sunday)
+table(newsfame$is_weekend)
+
+# PCA can be applied on categorical variables when the categorical variables are in numerical form, hence we're keeping these variables as these are.
+```
+
+## Correlation
+
+```{r}
+# Check the Correlation of the variables.
+
+cor_newsfame <- round(cor(newsfame), 2)
+```
+
+```{r}
+# Reshaping the Correlation matrix.
+
+melted_cor_newsfame <- melt(cor_newsfame,na.rm = TRUE)
+melted_cor_newsfame
+```
+
+```{r}
+# Heatmap for Correlation of the variables.
+
+my_plot <- ggplot(data = melted_cor_newsfame, aes(x=Var1, y=Var2, fill=value)) + geom_tile()+ scale_fill_gradient2(low = "#9E4784", high = "#128789", mid = "white") + theme(axis.text.x = element_text(angle = 90))
+my_plot
+```
+
+## Reducing the dimensions by correlation
+
+```{r}
+high_cor_newsfame <- which(abs(cor_newsfame) > 0.8 & upper.tri(cor_newsfame), arr.ind = TRUE)
+high_cor_newsfame
+
+colnames(newsfame)[high_cor_newsfame[, 2]] 
+
+# https://www.westga.edu/academics/research/vrc/assets/docs/scatterplots_and_correlation_notes.pdf
+```
+
+```{r}
+selected_cor_variables <- c("n_non_stop_words", "n_non_stop_unique_tokens", "worstkw_avg", "bestkw_max", "avgkw_avg", "self_reference_avg_sharess", "LDA_02","n_unique_tokens", "worstkw_max" , "worstkw_min", "avgkw_max", "self_reference_min_shares", "self_reference_max_shares", "data_channel_is_world")
+```
+
+```{r}
+high_cor_matrix <- round(cor(newsfame[,selected_cor_variables]),2)
+```
+
+```{r}
+melted_high_cor_matrix <- melt(high_cor_matrix)
+melted_high_cor_matrix
+```
+
+```{r}
+my_plot_high_cor <- ggplot(data = melted_high_cor_matrix, aes(x=Var1, y=Var2, fill=value)) + geom_tile()+ scale_fill_gradient2(low = "#9E4784", high = "#1A5F7A", mid = "white") + theme(axis.text.x = element_text(angle = 90))
+my_plot_high_cor
+```
+
+```{r}
+color_set <- c("#0b2a36","#128789","#5c8898","#FFFFFF"
+,"#cea3c1","#bb7ea8","#9E4784")
+```
+
+```{r}
+
+corrplot(high_cor_matrix, method = 'circle',type="lower",col = COL2('PiYG'), order = 'alphabet', cl.ratio = 0.3,cl.cex = 0.6,tl.cex = 0.5,tl.col = "black",addCoef.col =1,number.cex = 0.5,rect.lwd = 5)
+
+corrplot(high_cor_matrix, method = 'circle',type="lower",col = color_set, order = 'alphabet', cl.ratio = 0.3,cl.cex = 0.6,tl.cex = 0.5,tl.col = "black",addCoef.col =1,number.cex = 0.5,rect.lwd = 5)
+```
+
+```{r}
+# Removing 7 variables which are highly correlated to other variables.
+
+  newsfame_nonco = subset(newsfame, select = -c(data_channel_is_world,n_non_stop_words,n_non_stop_unique_tokens,worstkw_avg,worstkw_min,avgkw_avg,self_reference_avg_sharess))
+```
+
+```{r}
+colnames(newsfame_nonco)
+```
+
+```{r}
+# Cross-check the highly correlated variables of the dataset.
+
+high_cor_newsfame_1 <- which(abs(cor(newsfame_nonco)) > 0.8 & upper.tri(cor(newsfame_nonco)), arr.ind = TRUE)
+high_cor_newsfame_1
+
+colnames(newsfame_nonco)[high_cor_newsfame_1[, 2]] 
+```
+
+# Dimention Reduction using Principal Complonent of Analysis
+
+```{r}
+# Dropping the target variable "Shares" before performing PCA
+newfame_before_pca <- newsfame_nonco[, -ncol(newsfame_nonco)]
+pc_newsfame <- prcomp(newfame_before_pca, center = T, scale. = T)
+attributes(pc_newsfame)
+```
+
+```{r}
+# Statistical and Structural Summary of PCA
+
+summary(pc_newsfame)
+str(pc_newsfame)
+```
+
+```{r}
+# SCREE Plot for Visualization of the principal components.
+library(factoextra)
+
+fviz_eig(pc_newsfame, addlabels = T, ncp = 60, barfill = "#128789", barcolor = "#9E4784") +
+  ggplot2::coord_cartesian(expand = FALSE, xlim = c(0, 20)) +
+  ggplot2::theme(axis.text.x = ggplot2::element_text(size = 8, angle = 45, hjust = 1))
+
+
+#http://www.sthda.com/english/wiki/eigenvalues-quick-data-visualization-with-factoextra-r-software-and-data-mining
+```
+
+```{r}
+# PEV
+
+pc_newsfame_pev <- pc_newsfame$sdev^2 /sum(pc_newsfame$sdev^2)
+```
+
+```{r}
+# 80% of Cumulative proportion of variance explained with PCA
+
+plot(cumsum(pc_newsfame_pev),
+     ylim=c(0,1),
+     xlab="PC",
+     ylab="Cumulative PEV",
+     pch=18,
+     col="#9E4784")
+abline(h=0.8, col="#128789", lty='dashed')
+
+
+# 70% of Cumulative proportion of variance explained with PCA
+
+plot(cumsum(pc_newsfame_pev),
+     ylim=c(0,1),
+     xlab="PC",
+     ylab="Cumulative PEV",
+     pch=18,
+     col="#9E4784")
+abline(h=0.7, col="#128789", lty='dashed')
+
+# 65% of Cumulative proportion of variance explained with PCA
+
+plot(cumsum(pc_newsfame_pev),
+     ylim=c(0,1),
+     xlab="PC",
+     ylab="Cumulative PEV",
+     pch=18,
+     col="#9E4784")
+abline(h=0.65, col="#128789", lty='dashed')
+```
+
+```{r}
+# Check PC Loading for 17 PCs as these components explain approximate 65% of variation in the data set.
+
+pc_newsfame_loadings <- round(pc_newsfame$rotation[ ,1:17],3)
+pc_newsfame_loadings
+```
+
+```{r}
+# As LDA_00 is repeated in PC4,PC6, we've selected the neares top value for LAD_00 which is 'data_channel_is_bus; from PC4.
+
+selected_vars_4 <- names(sort(abs(pc_newsfame_loadings[,4]), decreasing = TRUE)[1:2])
+selected_vars_4
+```
+
+```{r}
+# Maximum contribution of variables to first 17 PC counts.
+
+max_loading_pc_newsfame <- apply(pc_newsfame_loadings, 2, function(x) names(x)[which.max(abs(x))])
+max_loading_pc_newsfame
+```
+
+```{r}
+# Visualization of contribution of variables to first 17 PC counts.
+
+fviz_contrib(pc_newsfame, choice = "var", axes = 1, top = 5, color ="#9E4784", fill ="#128789")
+fviz_contrib(pc_newsfame, choice = "var", axes = 2, top = 5, color ="#9E4784", fill ="#128789")
+fviz_contrib(pc_newsfame, choice = "var", axes = 3, top = 5, color ="#9E4784", fill ="#128789")
+fviz_contrib(pc_newsfame, choice = "var", axes = 4, top = 5, color ="#9E4784", fill ="#128789")
+fviz_contrib(pc_newsfame, choice = "var", axes = 5, top = 5, color ="#9E4784", fill ="#128789")
+fviz_contrib(pc_newsfame, choice = "var", axes = 7, top = 5, color ="#9E4784", fill ="#128789")
+fviz_contrib(pc_newsfame, choice = "var", axes = 8, top = 5, color ="#9E4784", fill ="#128789")
+fviz_contrib(pc_newsfame, choice = "var", axes = 9, top = 5, color ="#9E4784", fill ="#128789")
+fviz_contrib(pc_newsfame, choice = "var", axes = 10, top = 5, color ="#9E4784", fill ="#128789")
+fviz_contrib(pc_newsfame, choice = "var", axes = 11, top = 5, color ="#9E4784", fill ="#128789")
+fviz_contrib(pc_newsfame, choice = "var", axes = 12, top = 5, color ="#9E4784", fill ="#128789")
+fviz_contrib(pc_newsfame, choice = "var", axes = 13, top = 5, color ="#9E4784", fill ="#128789")
+fviz_contrib(pc_newsfame, choice = "var", axes = 14, top = 5, color ="#9E4784", fill ="#128789")
+fviz_contrib(pc_newsfame, choice = "var", axes = 15, top = 5, color ="#9E4784", fill ="#128789")
+fviz_contrib(pc_newsfame, choice = "var", axes = 16, top = 5, color ="#9E4784", fill ="#128789")
+fviz_contrib(pc_newsfame, choice = "var", axes = 17, top = 5, color ="#9E4784", fill ="#128789")
+```
+
+```{r}
+fviz_pca_var(pc_newsfame, col.var = "cos2",
+             gradient.cols =c("#128789","#9E4784","#990019"),
+             repel = TRUE)
+
+library(grid)
+
+fviz_pca_var(pc_newsfame, col.var = "cos2",
+             gradient.cols = c("#C5DE47", "red", "#330033"),
+             repel = TRUE, labelsize = 3, pointsize = 3) +
+  theme(plot.margin = grid::unit(c(5, 100, 5, 5), "points"), text = element_text(size = 8))
+
+
+```
+
+```{r}
+# New dataset with the target variable `shares` & 16 variables based on contribution on PC 
+
+newsfame_final = subset(newsfame, select = c(global_subjectivity, rate_negative_words, bestkw_avg,n_tokens_content,LDA_00,is_weekend,data_channel_is_entertainment,avgkw_max,LDA_02,LDA_01,self_reference_min_shares,max_negative_polarity,worstkw_max,weekday_is_wednesday,weekday_is_tuesday,weekday_is_monday,shares))
+```
+
+```{r}
+names(newsfame_final)
+```
+
+```{r}
+newsfame_final_scale <- scale(newsfame_final)
+```
+
+```{r}
+# Histogram of continuous variables
+
+opar <- par(no.readonly = TRUE)
+par(mfrow = c(3,2))
+hist(newsfame_final_scale[, 1], main = names(newsfame_final)[1], xlab = names(newsfame_final)[1], col="#128789")
+hist(newsfame_final_scale[, 2], main = names(newsfame_final)[2], xlab = names(newsfame_final)[2], col="#128789")
+hist(newsfame_final_scale[, 3], main = names(newsfame_final)[3], xlab = names(newsfame_final)[3], col="#128789")
+hist(newsfame_final_scale[, 4], main = names(newsfame_final)[4], xlab = names(newsfame_final)[4], col="#128789")
+hist(newsfame_final_scale[, 5], main = names(newsfame_final)[5], xlab = names(newsfame_final)[5], col="#128789")
+hist(newsfame_final_scale[, 8], main = names(newsfame_final)[8], xlab = names(newsfame_final)[8], col="#128789")
+par(opar)
+```
+
+```{r}
+# Generate Histogram for continuous variables.
+
+opar <- par(no.readonly = TRUE)
+par(mfrow = c(3,2))
+hist(newsfame_final_scale[, 9], main = names(newsfame_final)[9], xlab = names(newsfame_final)[9], col="#128789")
+hist(newsfame_final_scale[, 10], main = names(newsfame_final)[10], xlab = names(newsfame_final)[10], col="#128789")
+hist(newsfame_final_scale[, 11], main = names(newsfame_final)[11], xlab = names(newsfame_final)[11], col="#128789")
+hist(newsfame_final_scale[, 12], main = names(newsfame_final)[12], xlab = names(newsfame_final)[12], col="#128789")
+hist(newsfame_final_scale[, 13], main = names(newsfame_final)[13], xlab = names(newsfame_final)[13], col="#128789")
+par(opar)
+```
+
+```{r}
+opar <- par(no.readonly = TRUE)
+par(mfrow = c(3,2))
+hist(newsfame_final_scale[, 14], main = names(newsfame_final)[14], xlab = names(newsfame_final)[14], col="#128789")
+hist(newsfame_final_scale[, 15], main = names(newsfame_final)[15], xlab = names(newsfame_final)[15], col="#128789")
+hist(newsfame_final_scale[, 16], main = names(newsfame_final)[16], xlab = names(newsfame_final)[16], col="#128789")
+hist(newsfame_final_scale[, 17], main = names(newsfame_final)[17], xlab = names(newsfame_final)[17], col="#128789")
+par(opar)
+```
+
+```{r}
+# Generate Box plot for categorical variables.
+
+boxplot(log(newsfame_final[, 17])~newsfame_final[, 6], xlab = "is_weekend",
+   ylab = "shares", 
+   main = "is_weekend",
+  col = "#128789")
+
+boxplot(log(newsfame_final[, 17])~newsfame_final[ ,7], xlab = "data_channel_is_entertainment",
+   ylab = "shares", 
+   main = "data_channel_is_entertainment",
+  col = "#128789")
+
+boxplot(log(newsfame_final[, 17])~newsfame_final[ ,14], xlab = "weekday_is_wednesday",
+   ylab = "shares", 
+   main = "weekday_is_wednesday",
+  col = "#128789")
+
+boxplot(log(newsfame_final[, 17])~newsfame_final[ ,15], xlab = "weekday_is_tuesday",
+   ylab = "shares", 
+   main = "weekday_is_tuesday",
+  col = "#128789")
+
+boxplot(log(newsfame_final[, 17])~newsfame_final[ ,16], xlab = "weekday_is_monday",
+   ylab = "shares", 
+   main = "weekday_is_monday",
+  col = "#128789")
+```
+
+> From the PCA we got the dimentions that are explaining the most variance in our dataset.
+
+> Now we are trying to divide our dataset into groups its because I want to understand that my dataset have some groups in it and if we found some group then I can make new target variable which can help me reach to answer more accurately
+
+```{r}
+head(newsfame_final)
+```
+
+```{r}
+str(newsfame_final)
+```
+
+As the data is not normally distributed we have to normalize the data by applying transformation methods
+
+```{r}
+# The features that are normally distributed then also we will apply normalization just to reduce the scale and the size of our data because of the limited computational resources
+
+#First we will apply the normalization on normally distributed features
+# global_subjectivity, global_subjectivity, kw_avg_max are all normally distributed just we are reducing the scaling by using Z-score Standardization:
+
+# function for Z-score Standardization
+normalize_zscore <- function(x) {
+  return ((x - mean(x)) / sd(x))
+}
+
+features_to_standardize <- c("global_subjectivity", "rate_negative_words", "avgkw_max")
+
+newsfame_final[features_to_standardize] <- as.data.frame(sapply(newsfame_final[features_to_standardize], normalize_zscore))
+
+```
+
+```{r}
+# Normalizing the right skewed features using the Log Transformation technique
+
+# Function for Log1p Transformation
+normalize_log1p <- function(x) {
+  return (log1p(x))
+}
+
+to_normalize_features <- c("n_tokens_content", "LDA_00", "LDA_01", "LDA_02", "self_reference_min_shares", "worstkw_max", "shares")
+
+# Apply the Log1p Transformation to right-skewed variables
+newsfame_final[to_normalize_features] <- as.data.frame(sapply(newsfame_final[to_normalize_features], normalize_log1p))
+
+```
+
+> Normalizing the features with help us to lessen the effect of outlier in our dataset
+
+```{r}
+#Normalizing the left skewed features using the Square transformation method
+normalize_square <- function(x) {
+  return (x^2)
+}
+newsfame_final$max_negative_polarity <- normalize_square(newsfame_final$max_negative_polarity)
+```
+
+```{r}
+head(newsfame_final)
+```
+
+Finally we have normalized the required features to reduce the influence of the outliers.
+
+# Indepth analysis of relation between the dependent variables and the popularity
+
+> First of all, we need to use the column 'popularity' we made in our data cleaning and preparation stage.That we have added to distinguish between popular and unpopular news articles.
+
+```{r}
+newsfame_final$popularity <- newsfame$popularity
+head(newsfame_final)
+```
+
+> Now we will visually check which are the features have major influence on our popularity.
+
+```{r}
+str(newsfame_final)
+```
+
+> need to change the datatype
+
+```{r}
+newsfame_final$is_weekend <- as.factor(newsfame_final$is_weekend)
+newsfame_final$data_channel_is_entertainment <-as.factor(newsfame_final$data_channel_is_entertainment)
+newsfame_final$weekday_is_wednesday <- as.factor(newsfame_final$weekday_is_wednesday)
+newsfame_final$weekday_is_tuesday <-as.factor(newsfame_final$weekday_is_tuesday)
+newsfame_final$weekday_is_monday <- as.factor(newsfame_final$weekday_is_monday)
+newsfame_final$popularity <- as.factor(newsfame_final$popularity)
+```
+
+# Univariate and multi-variate analysis
+
+```{r}
+# Separate numerical and categorical variables
+numerical_vars <- c("global_subjectivity", "rate_negative_words", "bestkw_avg", "n_tokens_content", "LDA_00", "LDA_02", "LDA_01", "self_reference_min_shares", "max_negative_polarity", "worstkw_max")
+categorical_vars <- c("is_weekend", "data_channel_is_entertainment", "weekday_is_wednesday", "weekday_is_tuesday", "weekday_is_monday")
+```
+
+
+```{r}
+
+# Create a long format dataframe for easy plotting with numerical variables
+long_dataframe_num <- newsfame_final %>% 
+  select(popularity, all_of(numerical_vars)) %>% 
+  pivot_longer(cols = -popularity, names_to = "variable", values_to = "value")
+
+# Plot the numerical variables
+numerical_plot <- ggplot(long_dataframe_num, aes(x=value, fill=popularity)) +
+  geom_density(alpha=0.5) +
+  facet_wrap(~variable, scales = "free", ncol = 2) +
+  scale_fill_manual(values = c("#128789", "#9E4784")) +
+  theme_minimal() +
+  theme(strip.text = element_text(size = 8),
+        axis.title.x = element_blank()) +
+  labs(title = "Density Plots for Numerical Variables by Popularity")
+
+print(numerical_plot)
+ggsave("numerical_density_plot.png", numerical_plot, width = 10, height = 6)
+
+# Create a long format dataframe for easy plotting with categorical variables
+long_dataframe_cat <- newsfame_final %>% 
+  select(popularity, all_of(categorical_vars)) %>% 
+  pivot_longer(cols = -popularity, names_to = "variable", values_to = "value") %>%
+  mutate(value = as.factor(value))
+
+# Plot the categorical variables
+categorical_plot <- ggplot(long_dataframe_cat, aes(x=value, fill=popularity)) +
+  geom_bar(position = "dodge") +
+  facet_wrap(~variable, ncol = 2) +
+  scale_fill_manual(values = c("#128789", "#C78BAF")) +
+  theme_minimal() +
+  theme(strip.text = element_text(size = 8),
+        axis.title.x = element_blank()) +
+  labs(title = "Bar Plots for Categorical Variables by Popularity")
+
+print(categorical_plot)
+#ggsave("categorical_bar_plot.png", categorical_plot, width = 10, height = 6)
+
+
+
+```
+
+
+```{r}
+for (feature in numerical_vars) {
+  plot <- ggplot(data = newsfame_final, aes_string(x = feature, y = "shares")) +
+    geom_point(alpha = 0.5, color = "#128789") +
+    labs(title = paste("Scatterplot of", feature, "vs shares")) +
+    theme_minimal() +
+    theme(plot.title = element_text(hjust = 0.5, size = 14))
+  print(plot)
+  #ggsave(paste0("scatter_plot_", feature, "_vs_shares.png"), plot, width = 10, height = 6)
+
+}
+
+```
+
+# Spliting and sampling the dataset
+
+```{r}
+# Load the caret package
+library(caret)
+
+# Set the seed for reproducibility
+set.seed(42)
+
+# Convert the continuous shares variable into categorical bins
+newsfame_final$shares_cat <- cut(newsfame_final$shares, breaks = quantile(newsfame_final$shares, probs = 0:4/4), include.lowest = TRUE, labels = FALSE)
+
+# Create stratified data partitions based on the categorical shares variable
+partition <- createDataPartition(newsfame_final$shares_cat, p = 0.7, list = FALSE, times = 1)
+
+# Split the dataset into training (70%) and test (30%) sets using the stratified partitions
+train_data <- newsfame_final[partition, ]
+test_data <- newsfame_final[-partition, ]
+
+# Prepare your dataset (separate the features and the target variable)
+x_train <- as.matrix(train_data[, 1:(ncol(newsfame_sample) - 1)])
+y_train <- train_data$shares
+x_test <- as.matrix(test_data[, 1:(ncol(newsfame_sample) - 1)])
+y_test <- test_data$shares
+
+# Remove the temporary shares_cat variable from the train and test datasets
+train_data$shares_cat <- NULL
+test_data$shares_cat <- NULL
+
+```
+
+
+```{r}
+# Taking sample of the data to reduce the computational power
+newsfame_sample <- newsfame_final[sample(nrow(newsfame_final), 500), ]
+```
+
+# Appplication of Predictive models
+
+## SVR modeling 
+
+```{r}
+start_time <- Sys.time()
+svr_model <- svm(shares ~ ., data = train_data, kernel = "radial", type = "eps-regression")
+end_time <- Sys.time()
+time_taken <- end_time - start_time
+time_taken
+```
+
+
+```{r}
+start_time <- Sys.time()
+predictions <- predict(svr_model, test_data)  #Predicting the values based on the training
+end_time <- Sys.time()
+time_taken <- end_time - start_time
+time_taken
+```
+
+
+```{r}
+mse <- mean((test_data$shares - predictions)^2)
+rmse <- sqrt(mse)
+rsq <- 1 - (sum((test_data$shares - predictions)^2) / sum((test_data$shares - mean(test_data$shares))^2))
+mae <- mean(abs(test_data$shares - predictions))
+
+
+cat("MSE:", mse, "\n")
+cat("RMSE:", rmse, "\n")
+cat("R-squared:", rsq, "\n")
+
+cat("MAE:", mae, "\n")
+```
+### Changing the parameter in SVR
+
+```{r}
+library(kernlab)
+# Copy the dataset into "data"
+data <- newsfame_sample
+
+# Convert categorical columns to numerical
+for (column_name in colnames(data)) {
+  if (is.factor(data[[column_name]])) {
+    data[[column_name]] <- as.numeric(as.factor(data[[column_name]]))
+  }
+}
+
+# Split the data into training and testing sets
+set.seed(42)
+train_index <- createDataPartition(data$shares, p = 0.8, list = FALSE)
+train_data <- data[train_index, ]
+test_data <- data[-train_index, ]
+# Set up the grid of hyperparameters to search
+poly_grid <- expand.grid(degree = c(2, 3),
+                         scale = c(0.1, 1),
+                         C = 10^(-3:1))
+
+rbf_grid <- expand.grid(sigma = c(0.1, 1, 10),
+                        C = 10^(-2:2))
+
+# Fit the models with hyperparameter tuning
+train_control <- trainControl(method = "cv", number = 5, search = "grid")
+
+poly_model <- train(shares ~ ., data = train_data, method = "svmPoly",
+                    trControl = train_control, tuneGrid = poly_grid)
+
+rbf_model <- train(shares ~ ., data = train_data, method = "svmRadial",
+                   trControl = train_control, tuneGrid = rbf_grid)
+
+# Print the models
+print(poly_model)
+print(rbf_model)
+
+# Make predictions on the test dataset using the best models
+poly_predictions <- predict(poly_model, test_data)
+rbf_predictions <- predict(rbf_model, test_data)
+
+# Evaluate the models' performance (Root Mean Squared Error)
+poly_rmse <- sqrt(mean((test_data$shares - poly_predictions)^2))
+rbf_rmse <- sqrt(mean((test_data$shares - rbf_predictions)^2))
+
+print(paste("Poly Kernel Root Mean Squared Error (RMSE):", poly_rmse))
+print(paste("RBF Kernel Root Mean Squared Error (RMSE):", rbf_rmse))
+
+```
+```{r}
+# Calculate MSE, RMSE, R-squared, and MAE values for Poly kernel SVM
+poly_mse <- mean((test_data$shares - poly_predictions)^2)
+poly_rmse <- sqrt(poly_mse)
+poly_rsq <- 1 - (sum((test_data$shares - poly_predictions)^2) / sum((test_data$shares - mean(test_data$shares))^2))
+poly_mae <- mean(abs(test_data$shares - poly_predictions))
+
+cat("Poly Kernel Model Performance:\n")
+cat("MSE:", poly_mse, "\n")
+cat("RMSE:", poly_rmse, "\n")
+cat("R-squared:", poly_rsq, "\n")
+cat("MAE:", poly_mae, "\n\n")
+
+# Calculate MSE, RMSE, R-squared, and MAE values for RBF kernel SVM
+rbf_mse <- mean((test_data$shares - rbf_predictions)^2)
+rbf_rmse <- sqrt(rbf_mse)
+rbf_rsq <- 1 - (sum((test_data$shares - rbf_predictions)^2) / sum((test_data$shares - mean(test_data$shares))^2))
+rbf_mae <- mean(abs(test_data$shares - rbf_predictions))
+
+cat("RBF Kernel Model Performance:\n")
+cat("MSE:", rbf_mse, "\n")
+cat("RMSE:", rbf_rmse, "\n")
+cat("R-squared:", rbf_rsq, "\n")
+cat("MAE:", rbf_mae, "\n")
+```
+
+
+
+## Linear Regression modelling 
+
+```{r}
+# Copying the dataset into "data"
+data <- newsfame_final
+
+for (column_name in colnames(data)) {
+  # If the column is a factor, convert it to numeric
+  if (is.factor(data[[column_name]])) {
+    data[[column_name]] <- as.numeric(as.factor(data[[column_name]]))
+  }
+}
+
+set.seed(42)
+split_index <- sample(1:nrow(data), size = 0.8 * nrow(data))
+lr_train_data <- data[split_index, ]
+lr_test_data <- data[-split_index, ]
+
+# Prepare your dataset (separate the features and the target variable)
+x_train_lr <- as.matrix(lr_train_data[, 1:(ncol(data) - 1)])
+y_train_lr <- lr_train_data$shares
+x_test_lr <- as.matrix(lr_test_data[, 1:(ncol(data) - 1)])
+y_test_lr <- lr_test_data$shares
+
+# Create the linear regression model with the same parameters
+alpha <- 1  
+lambda <- 0.1  
+fit <- glmnet(x_train_lr, y_train_lr, alpha = alpha, lambda = lambda)
+
+# Make predictions on the test dataset using the model
+predictions <- predict(fit, x_test_lr)
+
+# Evaluate the model's performance (Root Mean Squared Error)
+rmse <- sqrt(mean((y_test_lr - predictions)^2))
+print(paste("Root Mean Squared Error (RMSE):", rmse))
+```
+
+
+```{r}
+# Calculate MSE, RMSE, R-squared, and MAE
+mse <- mean((y_test_lr - predictions)^2)
+rmse <- sqrt(mse)
+rsq <- 1 - (sum((y_test_lr - predictions)^2) / sum((y_test_lr - mean(y_test_lr))^2))
+mae <- mean(abs(y_test_lr - predictions))
+
+# Print performance metrics
+cat("Linear Regression Model Performance:\n")
+cat("MSE:", mse, "\n")
+cat("RMSE:", rmse, "\n")
+cat("R-squared:", rsq, "\n")
+cat("MAE:", mae, "\n")
+```
+
+###  Linear model hyperparameter tuning (glmnet)
+
+```{r}
+
+# Set up the cross-validation parameters
+train_control <- trainControl(method = "repeatedcv", number = 5, repeats = 3, summaryFunction = defaultSummary)
+
+# Set up the grid of hyperparameters to search
+hyper_grid <- expand.grid(alpha = seq(0, 1, 0.25), 
+                          lambda = seq(0.001, 0.1, length.out = 10))
+
+# Fit the model with hyperparameter tuning
+model <- train(shares ~ ., data = train_data, method = "glmnet",
+               trControl = train_control, tuneGrid = hyper_grid)
+
+# Choose the best model
+best_model <- model$finalModel
+
+# Make predictions on the test dataset using the best model
+test_data_matrix <- as.matrix(test_data[, 1:(ncol(test_data) - 1)])
+test_data_actuals <- test_data$shares
+predictions <- predict(best_model, test_data_matrix)
+
+# Calculate MSE, RMSE, R-squared, and MAE
+mse <- mean((test_data_actuals - predictions)^2)
+rmse <- sqrt(mse)
+rsq <- 1 - (sum((test_data_actuals - predictions)^2) / sum((test_data_actuals - mean(test_data_actuals))^2))
+mae <- mean(abs(test_data_actuals - predictions))
+
+# Print performance metrics
+cat("Tuned glmnet Model Performance:\n")
+cat("MSE:", mse, "\n")
+cat("RMSE:", rmse, "\n")
+cat("R-squared:", rsq, "\n")
+cat("MAE:", mae, "\n")
+
+```
+
+
+```{r}
+print(model)
+```
+
+
+```{r}
+# Changing the parameter according to the Hyperparameter tuning
+alpha <-  0.5
+lambda <- 0.01  
+fit <- glmnet(x_train_lr, y_train_lr, alpha = alpha, lambda = lambda)
+# Make predictions on the test dataset using the model
+predictions <- predict(fit, x_test_lr)
+
+# Evaluate the model's performance (Root Mean Squared Error)
+rmse <- sqrt(mean((y_test_lr - predictions)^2))
+print(paste("Root Mean Squared Error (RMSE):", rmse))
+```
+
+
+The RMSE value we are getting in Pyspark is 0.8857851733541195. Which we can see near to no difference at all. In R studio we have trained the model by taking sample of the whole dataset then also it gave the same results which means the sample is correctly representing the whole dataset.
+
+However, the time consumed in R is 9.83 mins to train our SVM model but in pyspark due to the power of distributed computing we trained the whole model with whole dataset then also it took 0.010753154754638672 sec only.
+
+## Random Forest modeling 
+
+```{r}
+
+dataset <- newsfame_
+
+# Split the data into train and test sets
+set.seed(42)
+train_indices <- sample(1:nrow(dataset), 0.8 * nrow(dataset))
+train_data <- dataset[train_indices, ]
+test_data <- dataset[-train_indices, ]
+
+
+start_time <- Sys.time()
+# Train a Random Forest model
+rf_model <- randomForest(shares ~ ., data=train_data, ntree=500, importance=TRUE)
+end_time <- Sys.time()
+time_taken <- end_time - start_time
+time_taken
+
+
+# Make predictions on the test dataset
+predictions <- predict(rf_model, test_data)
+
+# Calculate the Root Mean Squared Error (RMSE)
+rmse <- sqrt(mean((predictions - test_data$shares)^2))
+print(paste("Root Mean Squared Error (RMSE):", rmse))
+
+# Calculate the Mean Absolute Error (MAE)
+mae <- mae(test_data$shares, predictions)
+print(paste("Mean Absolute Error (MAE):", mae))
+
+# Calculate the Mean Squared Error (MSE)
+mse <- mean((predictions - test_data$shares)^2)
+print(paste("Mean Squared Error (MSE):", mse))
+
+# Calculate the R-squared (R²)
+r_squared <- 1 - sum((predictions - test_data$shares)^2) / sum((mean(test_data$shares) - test_data$shares)^2)
+print(paste("R-squared (R²):", r_squared))
+```
+
+
+```{r}
+# Visualization to compare models
+
+results <- data.frame(
+  Model = c("SVR (Poly)", "SVR (RBF)", "SVR (RBF) w/o Tuning", "LR w/o Tuning", "LR (glmnet)", "RF (ntrees=100)", "RF (ntrees=500) w/o Sampling", "Decision Trees"),
+  MSE = c(0.433518, 0.6291202, 0.4358, 0.01012683, 3.502165, 0.765760841, 0.166146593, 0.799594049),
+  RMSE = c(0.65842087, 0.793171, 0.6601515, 0.1006321, 1.871407, 0.87507762, 0.407610835, 0.894200229),
+  MAE = c(0.3786656, 0.4447944, 0.4324136, 0.07669861, 1.368233, 0.658999382, 0.253429335, 0.673943011),
+  R2 = c(0.6408816, 0.4788484, 0.5065429, 0.9883991, NA, 0.122773444, 0.809668769, 0.08401541)
+)
+
+# Reshape the data frame to a long format
+results_long <- gather(results, key = "Metric", value = "Value", -Model)
+
+# Create a bar plot for each performance metric with enhanced visuals
+ggplot(data = results_long, aes(x = Model, y = Value, fill = Metric)) +
+  geom_bar(stat = "identity", position = "dodge", width = 0.7) +
+  theme_minimal() +
+  theme(
+    axis.text.x = element_text(angle = 45, hjust = 1, size = 10),
+    axis.text.y = element_text(size = 10),
+    axis.title = element_text(size = 12),
+    plot.title = element_text(size = 14, face = "bold", hjust = 0.5),
+    legend.title = element_text(size = 12),
+    legend.text = element_text(size = 10),
+    panel.grid.major = element_line(color = "gray", linetype = "dotted")
+  ) +
+  labs(title = "Model Performance Comparison", x = "Model", y = "Value") +
+  scale_fill_brewer(palette = "Set1", name = "Metric") +
+  guides(fill = guide_legend(title.position = "top", title.hjust = 0.5))
+
+```
+
+
+```{r}
+#write.csv( newsfame_final, "D://Term-2//Distributed Data Analysis//OnlineNewsPredition_Reduced.csv", row.names=FALSE)
+```
